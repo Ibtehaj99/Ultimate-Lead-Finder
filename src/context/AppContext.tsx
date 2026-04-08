@@ -1,6 +1,20 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { db } from '@/lib/firebase';
+import {
+    collection,
+    addDoc,
+    getDocs,
+    deleteDoc,
+    doc,
+    query,
+    orderBy,
+    onSnapshot,
+    writeBatch,
+    where,
+    updateDoc,
+} from 'firebase/firestore';
 
 // Define types
 export interface Lead {
@@ -70,6 +84,7 @@ interface AppContextType {
     recentActivity: Activity[];
     user: UserProfile;
     settings: Settings;
+    isLoading: boolean;
     // Actions
     addLead: (lead: Omit<Lead, 'id' | 'addedAt'>) => void;
     updateLeadStatus: (id: string, status: Lead['status']) => void;
@@ -85,11 +100,11 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STORAGE_KEYS = {
-    SEARCH_HISTORY: 'ulf_search_history',
-    RECENT_ACTIVITY: 'ulf_recent_activity',
-    SAVED_LEADS: 'ulf_saved_leads',
-    CREDITS: 'ulf_credits_remaining',
+// Firestore collection names
+const COLLECTIONS = {
+    SAVED_LEADS: 'savedLeads',
+    SEARCH_HISTORY: 'searchHistory',
+    RECENT_ACTIVITY: 'recentActivity',
 };
 
 const INITIAL_USER: UserProfile = {
@@ -108,25 +123,6 @@ const INITIAL_SETTINGS: Settings = {
     apiKey: 'sk_test_123456789',
 };
 
-function loadFromStorage<T>(key: string, fallback: T): T {
-    if (typeof window === 'undefined') return fallback;
-    try {
-        const stored = localStorage.getItem(key);
-        return stored ? JSON.parse(stored) : fallback;
-    } catch {
-        return fallback;
-    }
-}
-
-function saveToStorage<T>(key: string, value: T) {
-    if (typeof window === 'undefined') return;
-    try {
-        localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-        // ignore storage errors
-    }
-}
-
 export function AppProvider({ children }: { children: React.ReactNode }) {
     const [searchHistory, setSearchHistory] = useState<SearchRecord[]>([]);
     const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
@@ -135,46 +131,64 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<UserProfile>(INITIAL_USER);
     const [settings, setSettings] = useState<Settings>(INITIAL_SETTINGS);
     const [creditsRemaining, setCreditsRemaining] = useState(500);
-    const [hydrated, setHydrated] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Load from localStorage on mount
+    // Real-time listeners for Firestore
     useEffect(() => {
-        setSearchHistory(loadFromStorage<SearchRecord[]>(STORAGE_KEYS.SEARCH_HISTORY, []));
-        setRecentActivity(loadFromStorage<Activity[]>(STORAGE_KEYS.RECENT_ACTIVITY, []));
-        setSavedLeads(loadFromStorage<Lead[]>(STORAGE_KEYS.SAVED_LEADS, []));
-        setCreditsRemaining(loadFromStorage<number>(STORAGE_KEYS.CREDITS, 500));
-        setHydrated(true);
+        // Listen to saved leads
+        const leadsQuery = query(
+            collection(db, COLLECTIONS.SAVED_LEADS),
+            orderBy('addedAt', 'desc')
+        );
+        const unsubLeads = onSnapshot(leadsQuery, (snapshot) => {
+            const leadsData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+            })) as Lead[];
+            setSavedLeads(leadsData);
+        });
+
+        // Listen to search history
+        const searchQuery = query(
+            collection(db, COLLECTIONS.SEARCH_HISTORY),
+            orderBy('timestamp', 'desc')
+        );
+        const unsubSearch = onSnapshot(searchQuery, (snapshot) => {
+            const searchData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+            })) as SearchRecord[];
+            setSearchHistory(searchData);
+        });
+
+        // Listen to recent activity
+        const activityQuery = query(
+            collection(db, COLLECTIONS.RECENT_ACTIVITY),
+            orderBy('timestamp', 'desc')
+        );
+        const unsubActivity = onSnapshot(activityQuery, (snapshot) => {
+            const activityData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+            })) as Activity[];
+            setRecentActivity(activityData);
+            setIsLoading(false);
+        });
+
+        return () => {
+            unsubLeads();
+            unsubSearch();
+            unsubActivity();
+        };
     }, []);
-
-    // Persist to localStorage when data changes
-    useEffect(() => {
-        if (!hydrated) return;
-        saveToStorage(STORAGE_KEYS.SEARCH_HISTORY, searchHistory);
-    }, [searchHistory, hydrated]);
-
-    useEffect(() => {
-        if (!hydrated) return;
-        saveToStorage(STORAGE_KEYS.RECENT_ACTIVITY, recentActivity);
-    }, [recentActivity, hydrated]);
-
-    useEffect(() => {
-        if (!hydrated) return;
-        saveToStorage(STORAGE_KEYS.SAVED_LEADS, savedLeads);
-    }, [savedLeads, hydrated]);
-
-    useEffect(() => {
-        if (!hydrated) return;
-        saveToStorage(STORAGE_KEYS.CREDITS, creditsRemaining);
-    }, [creditsRemaining, hydrated]);
 
     // Derived stats — all computed from real search data
     const totalLeads = searchHistory.reduce((sum, s) => sum + s.leadsFound, 0);
     const activeSearches = searchHistory.length;
     const potentialRevenue = totalLeads * 4.3;
 
-    // Platform stats — computed from search history
+    // Platform stats
     const platformStats = (() => {
-        const total = searchHistory.length || 1;
         const google = searchHistory.filter(s => s.platform === 'all' || s.platform === 'google').length;
         const instagram = searchHistory.filter(s => s.platform === 'instagram').length;
         const facebook = searchHistory.filter(s => s.platform === 'facebook').length;
@@ -186,7 +200,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
     })();
 
-    const logSearch = useCallback((
+    const logSearch = useCallback(async (
         keyword: string,
         location: string,
         platform: string,
@@ -195,79 +209,113 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         leadsWithWebsite: number,
         leadsWithPhone: number
     ) => {
-        const searchRecord: SearchRecord = {
-            id: Math.random().toString(36).substr(2, 9),
-            keyword,
-            location,
-            platform,
-            leadsFound,
-            leadsWithEmail,
-            leadsWithWebsite,
-            leadsWithPhone,
-            timestamp: new Date().toISOString(),
-        };
-        setSearchHistory(prev => [searchRecord, ...prev]);
+        try {
+            // Add search record to Firestore
+            await addDoc(collection(db, COLLECTIONS.SEARCH_HISTORY), {
+                keyword,
+                location,
+                platform,
+                leadsFound,
+                leadsWithEmail,
+                leadsWithWebsite,
+                leadsWithPhone,
+                timestamp: new Date().toISOString(),
+            });
 
-        const activity: Activity = {
-            id: Math.random().toString(36).substr(2, 9),
-            action: 'Search',
-            details: `Searched "${keyword}" in ${location}`,
-            timestamp: new Date().toISOString(),
-            value: leadsFound,
-        };
-        setRecentActivity(prev => [activity, ...prev].slice(0, 50));
-
-        // Deduct 1 credit per search
-        setCreditsRemaining(prev => Math.max(0, prev - 1));
+            // Add activity record
+            await addDoc(collection(db, COLLECTIONS.RECENT_ACTIVITY), {
+                action: 'Search',
+                details: `Searched "${keyword}" in ${location}`,
+                timestamp: new Date().toISOString(),
+                value: leadsFound,
+            });
+        } catch (error) {
+            console.error('Error logging search to Firebase:', error);
+        }
     }, []);
 
-    const addLead = (leadData: Omit<Lead, 'id' | 'addedAt'>) => {
-        const newLead: Lead = {
-            ...leadData,
-            id: Math.random().toString(36).substr(2, 9),
-            addedAt: new Date().toISOString(),
-        };
-        setLeads((prev) => [newLead, ...prev]);
-    };
+    const saveSearchLeads = useCallback(async (searchLeads: Array<{ name: string; type: string; location: string; platform: string; website: string | null; status: string; email: string | null; phone: string | null }>) => {
+        try {
+            // Get existing leads to check for duplicates
+            const existingKeys = new Set(savedLeads.map(l => `${l.businessName}|${l.location}`));
 
-    const saveLead = (lead: Lead) => {
-        setSavedLeads(prev => {
-            if (prev.find(l => l.id === lead.id)) return prev;
-            return [lead, ...prev];
-        });
-    };
+            const newLeads = searchLeads.filter(l => !existingKeys.has(`${l.name}|${l.location}`));
 
-    const removeSavedLead = (id: string) => {
-        setSavedLeads(prev => prev.filter(l => l.id !== id));
-    };
+            if (newLeads.length === 0) return;
 
-    const saveSearchLeads = useCallback((searchLeads: Array<{ name: string; type: string; location: string; platform: string; website: string | null; status: string; email: string | null; phone: string | null }>) => {
-        setSavedLeads(prev => {
-            const existingKeys = new Set(prev.map(l => `${l.businessName}|${l.location}`));
-            const newLeads: Lead[] = searchLeads
-                .filter(l => !existingKeys.has(`${l.name}|${l.location}`))
-                .map(l => ({
-                    id: Math.random().toString(36).substr(2, 9),
+            // Batch write for performance
+            const batch = writeBatch(db);
+            newLeads.forEach(l => {
+                const docRef = doc(collection(db, COLLECTIONS.SAVED_LEADS));
+                batch.set(docRef, {
                     businessName: l.name,
-                    platform: (l.platform as Lead['platform']) || 'Google Maps',
+                    platform: l.platform || 'Google Maps',
                     location: l.location || '',
                     email: l.email || null,
                     phone: l.phone || null,
                     website: l.website || null,
-                    status: 'New' as const,
+                    status: 'New',
                     addedAt: new Date().toISOString(),
-                }));
-            return [...newLeads, ...prev];
-        });
-    }, []);
+                });
+            });
+            await batch.commit();
+        } catch (error) {
+            console.error('Error saving leads to Firebase:', error);
+        }
+    }, [savedLeads]);
 
-    const updateLeadStatus = (id: string, status: Lead['status']) => {
-        setLeads((prev) => prev.map((lead) => lead.id === id ? { ...lead, status } : lead));
-        setSavedLeads((prev) => prev.map((lead) => lead.id === id ? { ...lead, status } : lead));
+    const addLead = async (leadData: Omit<Lead, 'id' | 'addedAt'>) => {
+        try {
+            await addDoc(collection(db, COLLECTIONS.SAVED_LEADS), {
+                ...leadData,
+                addedAt: new Date().toISOString(),
+            });
+        } catch (error) {
+            console.error('Error adding lead:', error);
+        }
     };
 
-    const deleteLead = (id: string) => {
-        setLeads((prev) => prev.filter((lead) => lead.id !== id));
+    const saveLead = async (lead: Lead) => {
+        try {
+            const existing = savedLeads.find(l => l.id === lead.id);
+            if (existing) return;
+            await addDoc(collection(db, COLLECTIONS.SAVED_LEADS), {
+                businessName: lead.businessName,
+                platform: lead.platform,
+                location: lead.location,
+                email: lead.email,
+                phone: lead.phone,
+                website: lead.website,
+                status: lead.status,
+                addedAt: lead.addedAt,
+            });
+        } catch (error) {
+            console.error('Error saving lead:', error);
+        }
+    };
+
+    const removeSavedLead = async (id: string) => {
+        try {
+            await deleteDoc(doc(db, COLLECTIONS.SAVED_LEADS, id));
+        } catch (error) {
+            console.error('Error removing lead:', error);
+        }
+    };
+
+    const updateLeadStatus = async (id: string, status: Lead['status']) => {
+        try {
+            await updateDoc(doc(db, COLLECTIONS.SAVED_LEADS, id), { status });
+        } catch (error) {
+            console.error('Error updating lead status:', error);
+        }
+    };
+
+    const deleteLead = async (id: string) => {
+        try {
+            await deleteDoc(doc(db, COLLECTIONS.SAVED_LEADS, id));
+        } catch (error) {
+            console.error('Error deleting lead:', error);
+        }
     };
 
     const updateUser = (data: Partial<UserProfile>) => {
@@ -298,6 +346,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 recentActivity,
                 user,
                 settings,
+                isLoading,
                 addLead,
                 updateLeadStatus,
                 deleteLead,
