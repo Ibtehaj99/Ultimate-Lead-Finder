@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Calendar, Filter, Globe, LayoutGrid, List, Mail, MapPin, MoreHorizontal, Search as SearchIcon, Server, ShieldAlert, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
+import { useApp } from "@/context/AppContext";
 
 interface Lead {
     id: number;
@@ -24,6 +25,7 @@ export default function SearchPage() {
     const [isSearching, setIsSearching] = useState(false);
     const [leads, setLeads] = useState<Lead[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const { logSearch } = useApp();
 
     const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -48,7 +50,14 @@ export default function SearchPage() {
                 throw new Error(data.error || `Server error: ${response.status}`);
             }
 
-            setLeads(data.leads || []);
+            const fetchedLeads: Lead[] = data.leads || [];
+            setLeads(fetchedLeads);
+
+            // Log search to context for analytics/dashboard
+            const leadsWithEmail = fetchedLeads.filter(l => l.email).length;
+            const leadsWithWebsite = fetchedLeads.filter(l => l.website).length;
+            const leadsWithPhone = fetchedLeads.filter(l => l.phone).length;
+            logSearch(keyword, location, platform, fetchedLeads.length, leadsWithEmail, leadsWithWebsite, leadsWithPhone);
         } catch (err) {
             console.error(err);
             setError(err instanceof Error ? err.message : "Failed to fetch leads. Please try again.");

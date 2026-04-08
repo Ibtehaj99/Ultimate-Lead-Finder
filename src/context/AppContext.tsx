@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 // Define types
 export interface Lead {
@@ -13,6 +13,18 @@ export interface Lead {
     website: string | null;
     status: 'New' | 'Contacted' | 'Qualified' | 'Converted';
     addedAt: string;
+}
+
+export interface SearchRecord {
+    id: string;
+    keyword: string;
+    location: string;
+    platform: string;
+    leadsFound: number;
+    leadsWithEmail: number;
+    leadsWithWebsite: number;
+    leadsWithPhone: number;
+    timestamp: string;
 }
 
 export interface Activity {
@@ -36,7 +48,7 @@ export interface Settings {
     emailNotifications: boolean;
     smsNotifications: boolean;
     marketingEmails: boolean;
-    darkMode: boolean; // Managed by next-themes usually, but kept here for completeness
+    darkMode: boolean;
     apiKey: string;
 }
 
@@ -53,6 +65,8 @@ interface AppContextType {
         };
     };
     leads: Lead[];
+    savedLeads: Lead[];
+    searchHistory: SearchRecord[];
     recentActivity: Activity[];
     user: UserProfile;
     settings: Settings;
@@ -63,26 +77,19 @@ interface AppContextType {
     updateUser: (data: Partial<UserProfile>) => void;
     updateSettings: (data: Partial<Settings>) => void;
     spendCredits: (amount: number) => void;
+    logSearch: (keyword: string, location: string, platform: string, leadsFound: number, leadsWithEmail: number, leadsWithWebsite: number, leadsWithPhone: number) => void;
+    saveLead: (lead: Lead) => void;
+    removeSavedLead: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Initial Mock Data
-const INITIAL_LEADS: Lead[] = [
-    { id: '1', businessName: 'Smile Dental', platform: 'Google Maps', location: 'New York, NY', email: 'contact@smiledental.com', phone: '+1 212-555-0123', website: 'https://smiledental.com', status: 'New', addedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString() },
-    { id: '2', businessName: 'Urban Coffee', platform: 'Instagram', location: 'Brooklyn, NY', email: 'hello@urbancoffee.nyc', phone: '+1 718-555-0199', website: 'https://urbancoffee.nyc', status: 'Contacted', addedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString() },
-    { id: '3', businessName: 'Elite Fitness', platform: 'Facebook', location: 'Queens, NY', email: null, phone: '+1 347-555-0144', website: 'https://elitefitness.com', status: 'New', addedAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString() },
-    { id: '4', businessName: 'Tech Solutions Inc', platform: 'Google Maps', location: 'Manhattan, NY', email: 'info@techsolutions.com', phone: '+1 212-555-9988', website: 'https://techsolutions.com', status: 'Qualified', addedAt: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString() },
-    { id: '5', businessName: 'Bloom Florist', platform: 'Instagram', location: 'SoHo, NY', email: 'orders@bloomflorist.com', phone: '+1 212-555-7766', website: null, status: 'New', addedAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString() },
-];
-
-const INITIAL_ACTIVITY: Activity[] = [
-    { id: '1', action: 'Search', details: 'Searched "Dentists in New York"', timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString(), value: 120 },
-    { id: '2', action: 'Search', details: 'Searched "Coffee Shops in Brooklyn"', timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(), value: 45 },
-    { id: '3', action: 'Search', details: 'Searched "Gyms in Queens"', timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(), value: 30 },
-    { id: '4', action: 'Export', details: 'Exported 50 leads to CSV', timestamp: new Date(Date.now() - 1000 * 60 * 200).toISOString() },
-    { id: '5', action: 'Search', details: 'Searched "Florists in SoHo"', timestamp: new Date(Date.now() - 1000 * 60 * 300).toISOString(), value: 15 },
-];
+const STORAGE_KEYS = {
+    SEARCH_HISTORY: 'ulf_search_history',
+    RECENT_ACTIVITY: 'ulf_recent_activity',
+    SAVED_LEADS: 'ulf_saved_leads',
+    CREDITS: 'ulf_credits_remaining',
+};
 
 const INITIAL_USER: UserProfile = {
     name: 'Alex Johnson',
@@ -100,23 +107,118 @@ const INITIAL_SETTINGS: Settings = {
     apiKey: 'sk_test_123456789',
 };
 
+function loadFromStorage<T>(key: string, fallback: T): T {
+    if (typeof window === 'undefined') return fallback;
+    try {
+        const stored = localStorage.getItem(key);
+        return stored ? JSON.parse(stored) : fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function saveToStorage<T>(key: string, value: T) {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+        // ignore storage errors
+    }
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-    const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
-    const [recentActivity, setRecentActivity] = useState<Activity[]>(INITIAL_ACTIVITY);
+    const [searchHistory, setSearchHistory] = useState<SearchRecord[]>([]);
+    const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
+    const [savedLeads, setSavedLeads] = useState<Lead[]>([]);
+    const [leads, setLeads] = useState<Lead[]>([]);
     const [user, setUser] = useState<UserProfile>(INITIAL_USER);
     const [settings, setSettings] = useState<Settings>(INITIAL_SETTINGS);
-    const [creditsRemaining, setCreditsRemaining] = useState(450);
-    const [activeSearches, setActiveSearches] = useState(23);
+    const [creditsRemaining, setCreditsRemaining] = useState(500);
+    const [hydrated, setHydrated] = useState(false);
 
-    // Derived stats
-    const totalLeads = leads.length + 12340; // Mocking a larger base number
-    const potentialRevenue = totalLeads * 4.3; // Approx $4.3 per lead value
+    // Load from localStorage on mount
+    useEffect(() => {
+        setSearchHistory(loadFromStorage<SearchRecord[]>(STORAGE_KEYS.SEARCH_HISTORY, []));
+        setRecentActivity(loadFromStorage<Activity[]>(STORAGE_KEYS.RECENT_ACTIVITY, []));
+        setSavedLeads(loadFromStorage<Lead[]>(STORAGE_KEYS.SAVED_LEADS, []));
+        setCreditsRemaining(loadFromStorage<number>(STORAGE_KEYS.CREDITS, 500));
+        setHydrated(true);
+    }, []);
 
-    const platformStats = {
-        google: 45,
-        instagram: 30,
-        facebook: 25,
-    };
+    // Persist to localStorage when data changes
+    useEffect(() => {
+        if (!hydrated) return;
+        saveToStorage(STORAGE_KEYS.SEARCH_HISTORY, searchHistory);
+    }, [searchHistory, hydrated]);
+
+    useEffect(() => {
+        if (!hydrated) return;
+        saveToStorage(STORAGE_KEYS.RECENT_ACTIVITY, recentActivity);
+    }, [recentActivity, hydrated]);
+
+    useEffect(() => {
+        if (!hydrated) return;
+        saveToStorage(STORAGE_KEYS.SAVED_LEADS, savedLeads);
+    }, [savedLeads, hydrated]);
+
+    useEffect(() => {
+        if (!hydrated) return;
+        saveToStorage(STORAGE_KEYS.CREDITS, creditsRemaining);
+    }, [creditsRemaining, hydrated]);
+
+    // Derived stats — all computed from real search data
+    const totalLeads = searchHistory.reduce((sum, s) => sum + s.leadsFound, 0);
+    const activeSearches = searchHistory.length;
+    const potentialRevenue = totalLeads * 4.3;
+
+    // Platform stats — computed from search history
+    const platformStats = (() => {
+        const total = searchHistory.length || 1;
+        const google = searchHistory.filter(s => s.platform === 'all' || s.platform === 'google').length;
+        const instagram = searchHistory.filter(s => s.platform === 'instagram').length;
+        const facebook = searchHistory.filter(s => s.platform === 'facebook').length;
+        const platformTotal = google + instagram + facebook || 1;
+        return {
+            google: Math.round((google / platformTotal) * 100),
+            instagram: Math.round((instagram / platformTotal) * 100),
+            facebook: Math.round((facebook / platformTotal) * 100),
+        };
+    })();
+
+    const logSearch = useCallback((
+        keyword: string,
+        location: string,
+        platform: string,
+        leadsFound: number,
+        leadsWithEmail: number,
+        leadsWithWebsite: number,
+        leadsWithPhone: number
+    ) => {
+        const searchRecord: SearchRecord = {
+            id: Math.random().toString(36).substr(2, 9),
+            keyword,
+            location,
+            platform,
+            leadsFound,
+            leadsWithEmail,
+            leadsWithWebsite,
+            leadsWithPhone,
+            timestamp: new Date().toISOString(),
+        };
+        setSearchHistory(prev => [searchRecord, ...prev]);
+
+        const activity: Activity = {
+            id: Math.random().toString(36).substr(2, 9),
+            action: 'Search',
+            details: `Searched "${keyword}" in ${location}`,
+            timestamp: new Date().toISOString(),
+            value: leadsFound,
+        };
+        setRecentActivity(prev => [activity, ...prev].slice(0, 50));
+
+        // Deduct 1 credit per search
+        setCreditsRemaining(prev => Math.max(0, prev - 1));
+    }, []);
 
     const addLead = (leadData: Omit<Lead, 'id' | 'addedAt'>) => {
         const newLead: Lead = {
@@ -127,8 +229,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setLeads((prev) => [newLead, ...prev]);
     };
 
+    const saveLead = (lead: Lead) => {
+        setSavedLeads(prev => {
+            if (prev.find(l => l.id === lead.id)) return prev;
+            return [lead, ...prev];
+        });
+    };
+
+    const removeSavedLead = (id: string) => {
+        setSavedLeads(prev => prev.filter(l => l.id !== id));
+    };
+
     const updateLeadStatus = (id: string, status: Lead['status']) => {
         setLeads((prev) => prev.map((lead) => lead.id === id ? { ...lead, status } : lead));
+        setSavedLeads((prev) => prev.map((lead) => lead.id === id ? { ...lead, status } : lead));
     };
 
     const deleteLead = (id: string) => {
@@ -145,8 +259,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const spendCredits = (amount: number) => {
         setCreditsRemaining((prev) => Math.max(0, prev - amount));
-        // Add activity
-        // ...
     };
 
     return (
@@ -160,6 +272,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                     platformStats,
                 },
                 leads,
+                savedLeads,
+                searchHistory,
                 recentActivity,
                 user,
                 settings,
@@ -169,6 +283,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 updateUser,
                 updateSettings,
                 spendCredits,
+                logSearch,
+                saveLead,
+                removeSavedLead,
             }}
         >
             {children}
