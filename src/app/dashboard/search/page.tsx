@@ -42,18 +42,16 @@ export default function SearchPage() {
                 body: JSON.stringify({ keyword, location, platform }),
             });
 
-            if (!response.ok) {
-                throw new Error("Failed to fetch leads");
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                throw new Error(data.error || `Server error: ${response.status}`);
             }
 
-            const data = await response.json();
-            if (data.error) {
-                throw new Error(data.error);
-            }
             setLeads(data.leads || []);
         } catch (err) {
             console.error(err);
-            setError("Failed to fetch leads. Please check your API key or try again.");
+            setError(err instanceof Error ? err.message : "Failed to fetch leads. Please try again.");
         } finally {
             setIsSearching(false);
         }
