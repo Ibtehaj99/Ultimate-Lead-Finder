@@ -68,8 +68,8 @@ export default function DashboardPage() {
                 />
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-                <Card className="col-span-4 border-border bg-card">
+            <div className="grid gap-4 grid-cols-1 lg:grid-cols-7">
+                <Card className="lg:col-span-4 border-border bg-card">
                     <CardHeader>
                         <CardTitle className="text-card-foreground">Recent Activity</CardTitle>
                     </CardHeader>
@@ -89,7 +89,7 @@ export default function DashboardPage() {
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="col-span-3 border-border bg-card">
+                <Card className="lg:col-span-3 border-border bg-card">
                     <CardHeader>
                         <CardTitle className="text-card-foreground">Platform Stats</CardTitle>
                     </CardHeader>

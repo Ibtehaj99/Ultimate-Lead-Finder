@@ -136,7 +136,8 @@ export default function SearchPage() {
                     <>
                         {viewMode === "list" ? (
                             <div className="w-full text-left text-sm text-muted-foreground">
-                                <div className="sticky top-0 z-10 grid grid-cols-8 gap-4 border-b border-border bg-muted/50 px-4 py-3 font-medium text-foreground">
+                                {/* Desktop table header - hidden on mobile */}
+                                <div className="sticky top-0 z-10 hidden md:grid grid-cols-8 gap-4 border-b border-border bg-muted/50 px-4 py-3 font-medium text-foreground">
                                     <div className="col-span-2">Business Name</div>
                                     <div>Platform</div>
                                     <div>Website</div>
@@ -146,56 +147,102 @@ export default function SearchPage() {
                                     <div className="text-right">Actions</div>
                                 </div>
                                 {leads.map((lead) => (
-                                    <div key={lead.id} className="grid grid-cols-8 gap-4 border-b border-border px-4 py-3 hover:bg-muted/50 transition-colors items-center">
-                                        <div className="col-span-2">
-                                            <div className="font-medium text-foreground">{lead.name}</div>
-                                            <div className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> {lead.location}</div>
+                                    <div key={lead.id}>
+                                        {/* Mobile card view */}
+                                        <div className="md:hidden border-b border-border p-4 space-y-2 hover:bg-muted/50 transition-colors">
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <div className="font-medium text-foreground text-base">{lead.name}</div>
+                                                    <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin className="h-3 w-3" /> {lead.location}</div>
+                                                </div>
+                                                <span className={cn(
+                                                    "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset shrink-0",
+                                                    lead.status.includes("No") || lead.status.includes("Old")
+                                                        ? "bg-red-400/10 text-red-500 ring-red-400/20"
+                                                        : "bg-green-400/10 text-green-500 ring-green-400/20"
+                                                )}>
+                                                    {lead.status.includes("No") || lead.status.includes("Old") ? <ShieldAlert className="mr-1 h-3 w-3" /> : <CheckCircle2 className="mr-1 h-3 w-3" />}
+                                                    {lead.status}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                                                <span className="flex items-center gap-1">
+                                                    <span className={cn("inline-block h-2 w-2 rounded-full", lead.platform.includes("Google") ? "bg-blue-500" : "bg-pink-500")}></span>
+                                                    {lead.platform}
+                                                </span>
+                                                {lead.website && (
+                                                    <a href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`} target="_blank" className="text-primary hover:underline flex items-center gap-1 truncate max-w-[180px]">
+                                                        <Globe className="h-3 w-3 shrink-0" /> {lead.website.replace(/^https?:\/\//, '')}
+                                                    </a>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs pt-1">
+                                                {lead.phone && (
+                                                    <a href={`tel:${lead.phone}`} className="text-foreground hover:text-primary transition-colors">{lead.phone}</a>
+                                                )}
+                                                {lead.email ? (
+                                                    <a href={`mailto:${lead.email}`} className="text-primary hover:underline flex items-center gap-1 truncate max-w-[200px]">
+                                                        <Mail className="h-3 w-3 shrink-0" />
+                                                        <span className="truncate">{lead.email}</span>
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-muted-foreground italic">Email not found</span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className={cn("inline-block h-2 w-2 rounded-full", lead.platform.includes("Google") ? "bg-blue-500" : "bg-pink-500")}></span>
-                                            {lead.platform}
-                                        </div>
-                                        <div>
-                                            {lead.website ? (
-                                                <a href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`} target="_blank" className="text-primary hover:underline flex items-center gap-1 truncate max-w-[120px]">
-                                                    <Globe className="h-3 w-3 shrink-0" /> {lead.website.replace(/^https?:\/\//, '')}
-                                                </a>
-                                            ) : (
-                                                <span className="text-muted-foreground italic">No Website</span>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <span className={cn(
-                                                "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset",
-                                                lead.status.includes("No") || lead.status.includes("Old")
-                                                    ? "bg-red-400/10 text-red-500 ring-red-400/20"
-                                                    : "bg-green-400/10 text-green-500 ring-green-400/20"
-                                            )}>
-                                                {lead.status.includes("No") || lead.status.includes("Old") ? <ShieldAlert className="mr-1 h-3 w-3" /> : <CheckCircle2 className="mr-1 h-3 w-3" />}
-                                                {lead.status}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            {lead.phone ? (
-                                                <a href={`tel:${lead.phone}`} className="text-foreground hover:text-primary transition-colors text-xs">{lead.phone}</a>
-                                            ) : (
-                                                <span className="text-muted-foreground">-</span>
-                                            )}
-                                        </div>
-                                        <div>
-                                            {lead.email ? (
-                                                <a href={`mailto:${lead.email}`} className="text-primary hover:underline flex items-center gap-1 truncate max-w-[150px] text-xs">
-                                                    <Mail className="h-3 w-3 shrink-0" />
-                                                    <span className="truncate">{lead.email}</span>
-                                                </a>
-                                            ) : (
-                                                <span className="text-muted-foreground text-xs italic">Not found</span>
-                                            )}
-                                        </div>
-                                        <div className="text-right">
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
+
+                                        {/* Desktop table row */}
+                                        <div className="hidden md:grid grid-cols-8 gap-4 border-b border-border px-4 py-3 hover:bg-muted/50 transition-colors items-center">
+                                            <div className="col-span-2">
+                                                <div className="font-medium text-foreground">{lead.name}</div>
+                                                <div className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" /> {lead.location}</div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn("inline-block h-2 w-2 rounded-full", lead.platform.includes("Google") ? "bg-blue-500" : "bg-pink-500")}></span>
+                                                {lead.platform}
+                                            </div>
+                                            <div>
+                                                {lead.website ? (
+                                                    <a href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`} target="_blank" className="text-primary hover:underline flex items-center gap-1 truncate max-w-[120px]">
+                                                        <Globe className="h-3 w-3 shrink-0" /> {lead.website.replace(/^https?:\/\//, '')}
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-muted-foreground italic">No Website</span>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <span className={cn(
+                                                    "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset",
+                                                    lead.status.includes("No") || lead.status.includes("Old")
+                                                        ? "bg-red-400/10 text-red-500 ring-red-400/20"
+                                                        : "bg-green-400/10 text-green-500 ring-green-400/20"
+                                                )}>
+                                                    {lead.status.includes("No") || lead.status.includes("Old") ? <ShieldAlert className="mr-1 h-3 w-3" /> : <CheckCircle2 className="mr-1 h-3 w-3" />}
+                                                    {lead.status}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                {lead.phone ? (
+                                                    <a href={`tel:${lead.phone}`} className="text-foreground hover:text-primary transition-colors text-xs">{lead.phone}</a>
+                                                ) : (
+                                                    <span className="text-muted-foreground">-</span>
+                                                )}
+                                            </div>
+                                            <div>
+                                                {lead.email ? (
+                                                    <a href={`mailto:${lead.email}`} className="text-primary hover:underline flex items-center gap-1 truncate max-w-[150px] text-xs">
+                                                        <Mail className="h-3 w-3 shrink-0" />
+                                                        <span className="truncate">{lead.email}</span>
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-muted-foreground text-xs italic">Not found</span>
+                                                )}
+                                            </div>
+                                            <div className="text-right">
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
