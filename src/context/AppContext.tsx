@@ -80,6 +80,7 @@ interface AppContextType {
     logSearch: (keyword: string, location: string, platform: string, leadsFound: number, leadsWithEmail: number, leadsWithWebsite: number, leadsWithPhone: number) => void;
     saveLead: (lead: Lead) => void;
     removeSavedLead: (id: string) => void;
+    saveSearchLeads: (searchLeads: Array<{ name: string; type: string; location: string; platform: string; website: string | null; status: string; email: string | null; phone: string | null }>) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -240,6 +241,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSavedLeads(prev => prev.filter(l => l.id !== id));
     };
 
+    const saveSearchLeads = useCallback((searchLeads: Array<{ name: string; type: string; location: string; platform: string; website: string | null; status: string; email: string | null; phone: string | null }>) => {
+        setSavedLeads(prev => {
+            const existingKeys = new Set(prev.map(l => `${l.businessName}|${l.location}`));
+            const newLeads: Lead[] = searchLeads
+                .filter(l => !existingKeys.has(`${l.name}|${l.location}`))
+                .map(l => ({
+                    id: Math.random().toString(36).substr(2, 9),
+                    businessName: l.name,
+                    platform: (l.platform as Lead['platform']) || 'Google Maps',
+                    location: l.location || '',
+                    email: l.email || null,
+                    phone: l.phone || null,
+                    website: l.website || null,
+                    status: 'New' as const,
+                    addedAt: new Date().toISOString(),
+                }));
+            return [...newLeads, ...prev];
+        });
+    }, []);
+
     const updateLeadStatus = (id: string, status: Lead['status']) => {
         setLeads((prev) => prev.map((lead) => lead.id === id ? { ...lead, status } : lead));
         setSavedLeads((prev) => prev.map((lead) => lead.id === id ? { ...lead, status } : lead));
@@ -286,6 +307,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 logSearch,
                 saveLead,
                 removeSavedLead,
+                saveSearchLeads,
             }}
         >
             {children}

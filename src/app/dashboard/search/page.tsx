@@ -25,7 +25,7 @@ export default function SearchPage() {
     const [isSearching, setIsSearching] = useState(false);
     const [leads, setLeads] = useState<Lead[]>([]);
     const [error, setError] = useState<string | null>(null);
-    const { logSearch } = useApp();
+    const { logSearch, saveSearchLeads } = useApp();
 
     const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -58,6 +58,9 @@ export default function SearchPage() {
             const leadsWithWebsite = fetchedLeads.filter(l => l.website).length;
             const leadsWithPhone = fetchedLeads.filter(l => l.phone).length;
             logSearch(keyword, location, platform, fetchedLeads.length, leadsWithEmail, leadsWithWebsite, leadsWithPhone);
+
+            // Auto-save all leads to Saved Leads page
+            saveSearchLeads(fetchedLeads);
         } catch (err) {
             console.error(err);
             setError(err instanceof Error ? err.message : "Failed to fetch leads. Please try again.");
