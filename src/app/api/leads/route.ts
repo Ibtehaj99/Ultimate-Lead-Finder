@@ -1,5 +1,19 @@
 import { NextResponse } from "next/server";
 
+interface Lead {
+    id: number;
+    name: string;
+    type: string;
+    location: string;
+    platform: string;
+    website: string | null;
+    status: string;
+    phone: string | null;
+    rating: number;
+    reviews: number;
+    email: string | null;
+}
+
 const EMAIL_REGEX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
 
 // Blacklisted domains/patterns that are not real contact emails
@@ -121,7 +135,7 @@ export async function POST(req: Request) {
         // Extract emails in parallel (with concurrency limit)
         const CONCURRENCY = 5;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const leadsRaw = places.map((place: any, index: number) => ({
+        const leadsRaw: Lead[] = places.map((place: any, index: number) => ({
             id: index + 1,
             name: place.title,
             type: place.category,
