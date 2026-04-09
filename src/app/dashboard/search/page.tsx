@@ -70,7 +70,7 @@ export default function SearchPage() {
     };
 
     return (
-        <div className="space-y-6 h-full flex flex-col">
+        <div className="space-y-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight text-foreground">Lead Finder</h2>
@@ -138,7 +138,7 @@ export default function SearchPage() {
             )}
 
             {/* Results */}
-            <div className="flex-1 overflow-auto rounded-md border border-border bg-card/30 p-1">
+            <div className="rounded-md border border-border bg-card/30 p-1">
                 {leads.length === 0 && !isSearching && !error ? (
                     <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8">
                         <SearchIcon className="h-12 w-12 mb-4 opacity-20" />
