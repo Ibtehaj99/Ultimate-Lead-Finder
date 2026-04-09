@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Calendar, Filter, Globe, LayoutGrid, List, Mail, MapPin, MoreHorizontal, Search as SearchIcon, Server, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { Download, Globe, LayoutGrid, List, Mail, MapPin, MoreHorizontal, Search as SearchIcon, ShieldAlert, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 
@@ -69,6 +69,29 @@ export default function SearchPage() {
         }
     };
 
+    const downloadCSV = () => {
+        if (leads.length === 0) return;
+        const headers = ["Name", "Type", "Location", "Platform", "Website", "Status", "Phone", "Email"];
+        const rows = leads.map((lead) => [
+            `"${(lead.name ?? "").replace(/"/g, '""')}"`,
+            `"${(lead.type ?? "").replace(/"/g, '""')}"`,
+            `"${(lead.location ?? "").replace(/"/g, '""')}"`,
+            `"${(lead.platform ?? "").replace(/"/g, '""')}"`,
+            `"${(lead.website ?? "").replace(/"/g, '""')}"`,
+            `"${(lead.status ?? "").replace(/"/g, '""')}"`,
+            `"${(lead.phone ?? "").replace(/"/g, '""')}"`,
+            `"${(lead.email ?? "").replace(/"/g, '""')}"`,
+        ]);
+        const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `leads_${new Date().toISOString().slice(0, 10)}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -77,6 +100,16 @@ export default function SearchPage() {
                     <p className="text-muted-foreground">Search for businesses across multiple platforms.</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    {leads.length > 0 && (
+                        <Button
+                            variant="outline"
+                            onClick={downloadCSV}
+                            className="flex items-center gap-2 border-border bg-transparent hover:bg-secondary text-foreground text-sm font-medium"
+                        >
+                            <Download className="h-4 w-4" />
+                            Download CSV
+                        </Button>
+                    )}
                     <Button variant="outline" size="icon" onClick={() => setViewMode("list")} className={cn(viewMode === "list" ? "bg-secondary text-foreground" : "bg-transparent border-border")}>
                         <List className="h-4 w-4" />
                     </Button>
