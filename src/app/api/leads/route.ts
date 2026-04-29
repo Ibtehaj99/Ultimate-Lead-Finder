@@ -120,6 +120,7 @@ export async function POST(req: Request) {
             body: JSON.stringify({
                 q: query,
                 location: location || undefined,
+                num: 20,
             }),
         });
 
