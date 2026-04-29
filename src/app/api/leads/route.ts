@@ -111,27 +111,35 @@ export async function POST(req: Request) {
 
         const query = `${keyword} ${platform === "all" ? "" : platform} in ${location}`;
 
-        const response = await fetch("https://google.serper.dev/places", {
-            method: "POST",
-            headers: {
-                "X-API-KEY": process.env.SERPER_API_KEY,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                q: query,
-                location: location || undefined,
-                num: 20,
-            }),
+        // Serper /places hard-limits to 10 results per request.
+        // Fetch page 1 and page 2 in parallel to get up to 20 results.
+        const fetchPage = async (page: number) => {
+            const res = await fetch("https://google.serper.dev/places", {
+                method: "POST",
+                headers: {
+                    "X-API-KEY": process.env.SERPER_API_KEY!,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    q: query,
+                    location: location || undefined,
+                    page,
+                }),
+            });
+            if (!res.ok) return [];
+            const json = await res.json();
+            return json.places || [];
+        };
+
+        const [page1, page2] = await Promise.all([fetchPage(1), fetchPage(2)]);
+
+        // Merge and deduplicate by business name
+        const seen = new Set<string>();
+        const places = [...page1, ...page2].filter((p: any) => {
+            if (seen.has(p.title)) return false;
+            seen.add(p.title);
+            return true;
         });
-
-        if (!response.ok) {
-            const error = await response.text();
-            console.error("Serper API error:", error);
-            return NextResponse.json({ error: "Failed to fetch data from Serper" }, { status: response.status });
-        }
-
-        const data = await response.json();
-        const places = data.places || [];
 
         // Extract emails in parallel (with concurrency limit)
         const CONCURRENCY = 5;
